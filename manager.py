@@ -1,6 +1,8 @@
 # manager.py
 import datetime
 import os
+import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -14,6 +16,52 @@ from utils.logger import Logger
 from utils.run_script import run_script
 from utils.send_message import send_server_message
 
+
+def load_latest_backup(backup_dir2):
+    # Get config and log paths
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    config_path = os.path.join(base_dir, 'config.ini')
+    log_path = os.path.join(base_dir, 'ManagerLog.txt')
+
+    # Initialize config manager and logger
+    config_manager = ConfigManager(config_path)
+    logger = Logger(log_path)
+
+    # Get server root from config
+    server_root = config_manager.get_server_root()
+
+    try:
+        # Find latest backup
+        backup_dir = os.path.join(server_root, backup_dir2)
+
+        # Get all backup folders, sort by name (which includes timestamp)
+        backups = sorted([d for d in os.listdir(backup_dir) if os.path.isdir(os.path.join(backup_dir, d))])
+
+        if not backups:
+            logger.log("No backups found.")
+            return False
+
+        # Get the latest backup
+        latest_backup = backups[-1]
+        latest_backup_path = os.path.join(backup_dir, latest_backup)
+        world_path = os.path.join(server_root, 'world')
+
+        # Stop Minecraft server (assuming stop_mc.py script exists)
+        stop_result = subprocess.run(['python3', os.path.join(base_dir, 'scripts', 'stop_mc.py')],
+                                     capture_output=True)
+
+        # Remove existing world
+        if os.path.exists(world_path):
+            shutil.rmtree(world_path)
+
+        # Copy backup to world directory
+        shutil.copytree(latest_backup_path, world_path)
+
+        logger.log(f"Loaded latest backup: {latest_backup}")
+        return True
+    except Exception as e:
+        logger.log(f"Failed to load latest backup: {e}")
+        return False
 
 class MinecraftServerManager:
 
@@ -107,9 +155,9 @@ class MinecraftServerManager:
         success = self._run_script('backup.py', "Creating Minecraft world backup")
         print("Backup: " + ("Success" if success else "Failed"))
 
-    def load_backup(self):
-        """Load latest backup"""
-        success = self._run_script('load_backup.py', "Loading latest Minecraft world backup")
+    def load_backup(self, milestone=False):
+        backup_dir = 'milestone_backups' if milestone else 'backups'
+        success = load_latest_backup(backup_dir)
         print("Load Backup: " + ("Success" if success else "Failed"))
 
     def show_log(self):
@@ -165,6 +213,52 @@ class MinecraftServerManager:
             schedule.cancel_job(self.scheduled_tasks["autobackup"])
             del self.scheduled_tasks["autobackup"]
             print("Autobackup schedule stopped.")
+
+    def toggle_milestonebackup(self):
+        """Toggle the milestone backup setting and start/stop the milestone backup schedule."""
+        current_setting = self.config_manager.is_milestonebackup_enabled()
+        new_setting = not current_setting
+        self.config_manager.set_milestonebackup(new_setting)
+
+        if new_setting:
+            self._start_milestonebackup()
+            print("Milestone backup enabled.")
+        else:
+            self._stop_milestonebackup()
+            print("Milestone backup disabled.")
+
+        self.logger.log(f"Milestone backup {'enabled' if new_setting else 'disabled'}")
+
+    def _start_milestonebackup(self):
+        """Start scheduled milestone backup if not already running."""
+        if "milestonebackup" not in self.scheduled_tasks:
+            milestonebackup_interval = self.config_manager.get_milestone_backup_interval()
+            milestonebackup_dir = self.config_manager.get_milestone_backup_dir()
+
+            # Schedule milestone backup based on interval from the config file
+            job = schedule.every(milestonebackup_interval).minutes.do(self.milestone_backup).tag("milestonebackup")
+            self.scheduled_tasks["milestonebackup"] = job
+            print(f"Milestone backup scheduled every {milestonebackup_interval} minutes.")
+            self._start_schedule_thread()
+
+    def _stop_milestonebackup(self):
+        """Stop scheduled milestone backup if it's running."""
+        if "milestonebackup" in self.scheduled_tasks:
+            schedule.cancel_job(self.scheduled_tasks["milestonebackup"])
+            del self.scheduled_tasks["milestonebackup"]
+            print("Milestone backup schedule stopped.")
+
+    def milestone_backup(self):
+        """Create a milestone backup without a max backup limit."""
+        milestonebackup_dir = self.config_manager.get_milestone_backup_dir()
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_path = os.path.join(milestonebackup_dir, f"milestone_backup_{timestamp}")
+        os.makedirs(milestonebackup_dir, exist_ok=True)
+
+        success = shutil.copytree(os.path.join(self.config_manager.get_server_root(), 'world'), backup_path)
+        self.logger.log(f"Milestone backup created: {backup_path}")
+
+
 
     def warn_and_schedule_stop_all(self, delay_minutes: int):
         """
@@ -249,9 +343,12 @@ Minecraft Server Manager Commands:
 - qt           : Stop Playit tunnel
 - rt           : Restart Playit tunnel
 - backup       : Create Minecraft world backup
+- backup -m    : Create world milestone backup
 - load         : Load latest backup
+- load -m      : Load latest milestonebackup
 - log          : Show latest server log
-- auto         : Toggle autobackup setting
+- auto         : Toggle autobackup
+- auto -m      : Toggle milestonebackup
 - sqa <minutes>: Schedule server stop after a delay
 - wsqa <minutes>: Warn players and schedule stop after a delay
 - rs <task_id> : Remove a scheduled task by ID
@@ -303,13 +400,19 @@ def main():
             elif command == 'rt':
                 manager.restart_tunnel()
             elif command == 'backup':
-                manager.backup()
+                if len(parts) > 1 and parts[1] == '-m':
+                    manager.milestone_backup()
+                else:
+                    manager.backup()
             elif command == 'load':
-                manager.load_backup()
+                manager.load_backup(milestone=(len(parts) > 1 and parts[1] == '-m'))
             elif command == 'log':
                 manager.show_log()
             elif command == 'auto':
-                manager.toggle_autobackup()
+                if len(parts) > 1 and parts[1] == '-m':
+                    manager.toggle_milestonebackup()
+                else:
+                    manager.toggle_autobackup()
             elif command == 'sqa' and len(parts) == 2 and parts[1].isdigit():
                 manager.schedule_stop_all(int(parts[1]))
             elif command == 'wsqa' and len(parts) == 2 and parts[1].isdigit():
@@ -322,8 +425,9 @@ def main():
                     print(f"Removed scheduled task: {task_id}")
                 else:
                     print(f"No such scheduled task: {task_id}")
-            elif command == 's' and len(parts) == 2:
-                manager.send_server_message(parts[1])
+            elif command == 's' and len(parts) >= 2:
+                message_body = " ".join(parts[1:])
+                manager.send_server_message(message_body)
             elif command == 'ss':
                 manager.show_scheduled_tasks()
             elif command == 'help':

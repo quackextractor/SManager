@@ -20,8 +20,9 @@ def create_minecraft_backup():
     config_manager = ConfigManager(config_path)
     logger = Logger(log_path)
 
-    # Get server root from config
+    # Get server root and max backups from config
     server_root = config_manager.get_server_root()
+    max_backups = config_manager.get_max_world_backups()
 
     try:
         # Create backup directory if it doesn't exist
@@ -38,8 +39,15 @@ def create_minecraft_backup():
 
         # Perform backup
         shutil.copytree(world_path, backup_path)
-
         logger.log(f"Minecraft world backup created: {backup_name}")
+
+        # Enforce max backups by removing the oldest if necessary
+        backups = sorted(os.listdir(backup_dir))
+        if len(backups) > max_backups:
+            oldest_backup = os.path.join(backup_dir, backups[0])
+            shutil.rmtree(oldest_backup)
+            logger.log(f"Oldest backup removed: {backups[0]}")
+
         return True
     except Exception as e:
         logger.log(f"Failed to create Minecraft world backup: {e}")

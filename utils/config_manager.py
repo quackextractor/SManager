@@ -16,9 +16,13 @@ class ConfigManager:
         else:
             # Create default configuration
             self.config['SERVER'] = {
-                'AutoBackupInterval': '60',
+                'AutoBackupInterval': '10',
                 'IsAutoBackupEnabled': 'False',
-                'ServerRootLocation': '/home/miro/Desktop/Fabric'
+                'ServerRootLocation': '/home/miro/Desktop/Fabric',
+                'MaxWorldBackups': '10',
+                'milestonebackupinterval': '360',
+                'milestonebackupdir': '/home/miro/Desktop/Fabric/milestone_backups',
+                'IsMilestoneBackupEnabled': 'False'
             }
             self._save_config()
 
@@ -40,14 +44,35 @@ class ConfigManager:
         self.config.set('SERVER', 'IsAutoBackupEnabled', str(enabled))
         self._save_config()
 
+    def get_max_world_backups(self) -> int:
+        """Get the maximum number of backups to retain."""
+        return self.config.getint('SERVER', 'MaxWorldBackups', fallback=10)
+
     def get_server_root(self) -> str:
         """Get server root location"""
         return self.config.get('SERVER', 'ServerRootLocation')
 
+    def get_milestone_backup_interval(self) -> int:
+        """Get milestone backup interval in minutes"""
+        return self.config.getint('SERVER', 'milestonebackupinterval', fallback=1440)
+
+    def get_milestone_backup_dir(self) -> str:
+        """Get milestone backup directory"""
+        return self.config.get('SERVER', 'milestonebackupdir', fallback='/home/miro/Desktop/Fabric/milestone_backups')
+
+    def is_milestonebackup_enabled(self) -> bool:
+        """Check if milestone backup is enabled"""
+        return self.config.getboolean('SERVER', 'IsMilestoneBackupEnabled')
+
+    def set_milestonebackup(self, enabled: bool):
+        """Set milestone backup status"""
+        self.config.set('SERVER', 'IsMilestoneBackupEnabled', str(enabled))
+        self._save_config()
+
     def get(self, section: str, option: str, fallback=None):
         """
         General method to retrieve a value from the config with an optional fallback.
-        
+
         :param section: The section in the config file (e.g., 'SERVER')
         :param option: The specific setting to retrieve
         :param fallback: The default value if the setting is not found
