@@ -26,6 +26,32 @@ class ConfigManager:
             }
             self._save_config()
 
+    def get_auto_shutdown_time(self) -> str:
+        """Get server auto-shutdown time (24-hour format HH:MM)"""
+        return self.config.get('SERVER', 'AutoShutdownTime', fallback='00:00')
+
+    def is_auto_shutdown_enabled(self) -> bool:
+        """Check if auto-shutdown is enabled"""
+        return self.config.getboolean('SERVER', 'IsAutoShutdownEnabled', fallback=False)
+
+    def set_auto_shutdown(self, enabled: bool):
+        """Set auto-shutdown status"""
+        self.config.set('SERVER', 'IsAutoShutdownEnabled', str(enabled))
+        self._save_config()
+
+    def set_auto_shutdown_time(self, time_str: str):
+        """Set auto-shutdown time (24-hour format HH:MM)"""
+        # Validate time format
+        try:
+            hours, minutes = map(int, time_str.split(':'))
+            if not (0 <= hours < 24 and 0 <= minutes < 60):
+                raise ValueError
+            self.config.set('SERVER', 'AutoShutdownTime', time_str)
+            self._save_config()
+            return True
+        except ValueError:
+            return False
+
     def _save_config(self):
         """Save configuration to file"""
         with open(self.config_path, 'w') as configfile:
