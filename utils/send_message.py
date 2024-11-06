@@ -57,12 +57,12 @@ def send_server_message(config_manager: ConfigManager, message: str, logger: Log
                 if logger:
                     logger.log(f"Timeout sending message to {session}")
 
-        time.sleep(1)
+        time.sleep(0.5)
         # Log the last few lines of the server log
         log_path = os.path.join(config_manager.get_server_root(), 'logs', 'latest.log')
         try:
             with open(log_path, 'r') as log_file:
-                last_lines = log_file.readlines()[-6:]  # Get the last few lines
+                last_lines = log_file.readlines()[-2:]  # Get the last few lines
 
                 # Print and log each line
                 print("Last few lines of the server log:")
