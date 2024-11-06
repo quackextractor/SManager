@@ -43,7 +43,7 @@ def send_server_message(config_manager: ConfigManager, message: str, logger: Log
                     session,
                     '-X',
                     'stuff',
-                    f'{cmd}\n'
+                    f'\n{cmd}\n'
                 ], check=True, timeout=3)
 
                 success = True

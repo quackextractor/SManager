@@ -1,4 +1,5 @@
 # manager.py
+
 import datetime
 import os
 import shutil
@@ -6,7 +7,7 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Optional, Dict
+from typing import Optional, Dict, Any, Callable
 
 import schedule
 
@@ -63,6 +64,7 @@ def load_latest_backup(backup_dir2):
         logger.log(f"Failed to load latest backup: {e}")
         return False
 
+
 class MinecraftServerManager:
 
     def __init__(self):
@@ -80,21 +82,87 @@ class MinecraftServerManager:
         self.schedule_thread = None
         self.schedule_running = False
 
+        # Command mapping for scheduling
+        self.command_map: Dict[str, Callable[..., Any]] = {
+            'sa': self.start_all,
+            'qa': self.stop_all,
+            'ra': self.restart_all,
+            'smc': self.start_mc,
+            'qmc': self.stop_mc,
+            'rmc': self.restart_mc,
+            'st': self.start_tunnel,
+            'qt': self.stop_tunnel,
+            'rt': self.restart_tunnel,
+            'backup': self.backup,
+            'backup -m': self.milestone_backup,
+            'load': lambda: self.load_backup(False),
+            'load -m': lambda: self.load_backup(True),
+            'log': self.show_log,
+            'auto': self.toggle_autobackup,
+            'auto -m': self.toggle_milestonebackup
+        }
+
     def _run_script(self, script_name: str, log_message: Optional[str] = None) -> bool:
         """
         Run a script from the scripts directory.
-
-        :param script_name: Name of the script to run.
-        :param log_message: Optional log message to write.
-        :return: True if script ran successfully, False otherwise.
         """
         return run_script(self.scripts_dir, script_name, self.logger, log_message)
 
     def send_server_message(self, message: str) -> bool:
         """
-        Wrapper method to send a message/command to all active screen sessions.
+        Send a message/command to all active screen sessions.
         """
         return send_server_message(self.config_manager, message, self.logger)
+
+    def schedule_command(self, command: str, delay_minutes: int, *args) -> bool:
+        """
+        Schedule any command to run after a specified delay.
+
+        :param command: Command to schedule
+        :param delay_minutes: Minutes to wait before executing
+        :param args: Additional arguments for the command
+        :return: True if scheduling successful, False otherwise
+        """
+        try:
+            if command not in self.command_map and not (command.startswith('s ') or command == 'sqa'):
+                print(f"Cannot schedule unknown command: {command}")
+                return False
+
+            def scheduled_execution():
+                if command in self.command_map:
+                    self.command_map[command](*args)
+                elif command.startswith('s '):
+                    # Handle server message command
+                    message = " ".join(args)
+                    self.send_server_message(message)
+                elif command == 'sqa':
+                    # Handle stop after delay
+                    self.stop_all()
+
+                # Remove the scheduled task after execution
+                if task_id in self.scheduled_tasks:
+                    schedule.cancel_job(self.scheduled_tasks[task_id])
+                    del self.scheduled_tasks[task_id]
+
+            # Create unique task ID
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            task_id = f'{command}_{timestamp}'
+
+            # Schedule the job
+            job = schedule.every(delay_minutes).minutes.do(scheduled_execution).tag(task_id)
+            self.scheduled_tasks[task_id] = job
+
+            # Start the scheduling thread if not already running
+            self._start_schedule_thread()
+
+            print(f"Scheduled {command} to run in {delay_minutes} minutes (Task ID: {task_id})")
+            self.logger.log(f"Scheduled command: {command} for {delay_minutes} minutes later")
+            return True
+
+        except Exception as e:
+            print(f"Failed to schedule command: {e}")
+            self.logger.log(f"Failed to schedule command {command}: {e}")
+            return False
 
     def start_all(self):
         """Start Minecraft server and Playit tunnel"""
@@ -329,6 +397,63 @@ class MinecraftServerManager:
             self.schedule_thread = None
             print("Scheduling thread stopped.")
 
+    def handle_command(self, command_input: str) -> bool:
+        """
+        Handle command input including scheduling syntax.
+
+        :param command_input: Raw command input string
+        :return: True if command handled successfully, False otherwise
+        """
+        try:
+            parts = command_input.strip().split()
+            if not parts:
+                return False
+
+            # Check for scheduling syntax: command -s minutes
+            if len(parts) >= 3 and parts[-2] == '-s' and parts[-1].isdigit():
+                delay_minutes = int(parts[-1])
+                base_command = " ".join(parts[:-2])
+                return self.schedule_command(base_command, delay_minutes, *parts[1:-2])
+
+            # Handle regular commands
+            command = parts[0].lower()
+
+            if command in self.command_map:
+                self.command_map[command](*parts[1:])
+            elif command == 'sqa' and len(parts) == 2 and parts[1].isdigit():
+                self.schedule_stop_all(int(parts[1]))
+            elif command == 'wsqa' and len(parts) == 2 and parts[1].isdigit():
+                self.warn_and_schedule_stop_all(int(parts[1]))
+            elif command == 'rs' and len(parts) == 2:
+                task_id = parts[1]
+                if task_id in self.scheduled_tasks:
+                    schedule.cancel_job(self.scheduled_tasks[task_id])
+                    del self.scheduled_tasks[task_id]
+                    print(f"Removed scheduled task: {task_id}")
+                else:
+                    print(f"No such scheduled task: {task_id}")
+            elif command == 's' and len(parts) >= 2:
+                message_body = " ".join(parts[1:])
+                self.send_server_message(message_body)
+            elif command == 'ss':
+                self.show_scheduled_tasks()
+            elif command == 'help':
+                self.help()
+            elif command == 'exit':
+                self.stop_schedule_thread()
+                print("Exiting Minecraft Server Manager.")
+                sys.exit()
+            else:
+                print("Unknown command. Type 'help' for a list of commands.")
+                return False
+
+            return True
+
+        except Exception as e:
+            print(f"Error handling command: {e}")
+            self.logger.log(f"Error handling command {command_input}: {e}")
+            return False
+
     def help(self):
         """Display help information about commands."""
         help_text = """
@@ -345,23 +470,25 @@ Minecraft Server Manager Commands:
 - backup       : Create Minecraft world backup
 - backup -m    : Create world milestone backup
 - load         : Load latest backup
-- load -m      : Load latest milestonebackup
+- load -m      : Load latest milestone backup
 - log          : Show latest server log
 - auto         : Toggle autobackup
-- auto -m      : Toggle milestonebackup
+- auto -m      : Toggle milestone backup
 - sqa <minutes>: Schedule server stop after a delay
 - wsqa <minutes>: Warn players and schedule stop after a delay
 - rs <task_id> : Remove a scheduled task by ID
 - ss           : Show scheduled tasks
-- s <txt>  : Send a message to console (/say is added) 
+- s <txt>      : Send a message to console (/say is added) 
                  or a command (if it's already starting with /)
 
+Scheduling Syntax:
+Add -s <minutes> to any command to schedule it
+ 
 - help         : Show this help message
 - exit         : Exit the program
 """
         print(help_text)
         self.logger.log("Displayed help information")
-
 
 def main():
     manager = MinecraftServerManager()
@@ -376,73 +503,12 @@ def main():
 
     while True:
         try:
-            command_input = input("Enter command (or 'help' for options): ").strip().lower()
-            parts = command_input.split()
-            command = parts[0]
-
-            # Command handling
-            if command == 'sa':
-                manager.start_all()
-            elif command == 'qa':
-                manager.stop_all()
-            elif command == 'ra':
-                manager.restart_all()
-            elif command == 'smc':
-                manager.start_mc()
-            elif command == 'qmc':
-                manager.stop_mc()
-            elif command == 'rmc':
-                manager.restart_mc()
-            elif command == 'st':
-                manager.start_tunnel()
-            elif command == 'qt':
-                manager.stop_tunnel()
-            elif command == 'rt':
-                manager.restart_tunnel()
-            elif command == 'backup':
-                if len(parts) > 1 and parts[1] == '-m':
-                    manager.milestone_backup()
-                else:
-                    manager.backup()
-            elif command == 'load':
-                manager.load_backup(milestone=(len(parts) > 1 and parts[1] == '-m'))
-            elif command == 'log':
-                manager.show_log()
-            elif command == 'auto':
-                if len(parts) > 1 and parts[1] == '-m':
-                    manager.toggle_milestonebackup()
-                else:
-                    manager.toggle_autobackup()
-            elif command == 'sqa' and len(parts) == 2 and parts[1].isdigit():
-                manager.schedule_stop_all(int(parts[1]))
-            elif command == 'wsqa' and len(parts) == 2 and parts[1].isdigit():
-                manager.warn_and_schedule_stop_all(int(parts[1]))
-            elif command == 'rs' and len(parts) == 2:
-                task_id = parts[1]
-                if task_id in manager.scheduled_tasks:
-                    schedule.cancel_job(manager.scheduled_tasks[task_id])
-                    del manager.scheduled_tasks[task_id]
-                    print(f"Removed scheduled task: {task_id}")
-                else:
-                    print(f"No such scheduled task: {task_id}")
-            elif command == 's' and len(parts) >= 2:
-                message_body = " ".join(parts[1:])
-                manager.send_server_message(message_body)
-            elif command == 'ss':
-                manager.show_scheduled_tasks()
-            elif command == 'help':
-                manager.help()
-            elif command == 'exit':
-                manager.stop_schedule_thread()
-                print("Exiting Minecraft Server Manager.")
-                sys.exit()
-            else:
-                print("Unknown command. Type 'help' for a list of commands.")
+            command_input = input("Enter command (or 'help' for options): ").strip()
+            manager.handle_command(command_input)
 
         except Exception as e:
             print(f"An error occurred: {e}")
             manager.logger.log(f"Error in main loop: {e}")
-
 
 if __name__ == "__main__":
     main()
