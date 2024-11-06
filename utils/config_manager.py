@@ -20,7 +20,7 @@ class ConfigManager:
                 'IsAutoBackupEnabled': 'False',
                 'ServerRootLocation': '/home/miro/Desktop/Fabric',
                 'MaxWorldBackups': '10',
-                'milestonebackupinterval': '360',
+                'milestonebackupinterval': '120',
                 'milestonebackupdir': '/home/miro/Desktop/Fabric/milestone_backups',
                 'IsMilestoneBackupEnabled': 'False'
             }
