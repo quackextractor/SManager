@@ -95,8 +95,8 @@ class MinecraftServerManager:
             'rt': self.restart_tunnel,
             'backup': self.backup,
             'backup -m': self.milestone_backup,
-            'load': lambda: self.load_backup(False),
-            'load -m': lambda: self.load_backup(True),
+            'load': self.load_regular_backup,
+            'load -m': self.load_milestone_backup,
             'log': self.show_log,
             'auto': self.toggle_autobackup,
             'auto -m': self.toggle_milestonebackup
@@ -218,15 +218,26 @@ class MinecraftServerManager:
         time.sleep(2)  # Short delay between stop and start
         self.start_tunnel()
 
-    def backup(self):
+    def backup(self, milestone=False):  # Fixed: Added milestone parameter
         """Create Minecraft world backup"""
-        success = self._run_script('backup.py', "Creating Minecraft world backup")
-        print("Backup: " + ("Success" if success else "Failed"))
+        if milestone:
+            self.milestone_backup()
+        else:
+            success = self._run_script('backup.py', "Creating Minecraft world backup")
+            print("Backup: " + ("Success" if success else "Failed"))
 
     def load_backup(self, milestone=False):
         backup_dir = 'milestone_backups' if milestone else 'backups'
         success = load_latest_backup(backup_dir)
         print("Load Backup: " + ("Success" if success else "Failed"))
+
+    def load_regular_backup(self, *args):  # Fixed: Added method to handle regular backup loading
+        """Load the latest regular backup"""
+        self.load_backup(False)
+
+    def load_milestone_backup(self, *args):  # Fixed: Added method to handle milestone backup loading
+        """Load the latest milestone backup"""
+        self.load_backup(True)
 
     def show_log(self):
         """Show latest Minecraft server log"""
@@ -400,9 +411,6 @@ class MinecraftServerManager:
     def handle_command(self, command_input: str) -> bool:
         """
         Handle command input including scheduling syntax.
-
-        :param command_input: Raw command input string
-        :return: True if command handled successfully, False otherwise
         """
         try:
             parts = command_input.strip().split()
@@ -416,15 +424,18 @@ class MinecraftServerManager:
                 return self.schedule_command(base_command, delay_minutes, *parts[1:-2])
 
             # Handle regular commands
-            command = parts[0].lower()
+            command = " ".join(parts)  # Fixed: Join all parts to handle commands with spaces
+            base_command = parts[0].lower()
 
             if command in self.command_map:
-                self.command_map[command](*parts[1:])
-            elif command == 'sqa' and len(parts) == 2 and parts[1].isdigit():
+                self.command_map[command]()  # Fixed: Use full command string for lookup
+            elif base_command in self.command_map:
+                self.command_map[base_command](*parts[1:])
+            elif base_command == 'sqa' and len(parts) == 2 and parts[1].isdigit():
                 self.schedule_stop_all(int(parts[1]))
-            elif command == 'wsqa' and len(parts) == 2 and parts[1].isdigit():
+            elif base_command == 'wsqa' and len(parts) == 2 and parts[1].isdigit():
                 self.warn_and_schedule_stop_all(int(parts[1]))
-            elif command == 'rs' and len(parts) == 2:
+            elif base_command == 'rs' and len(parts) == 2:
                 task_id = parts[1]
                 if task_id in self.scheduled_tasks:
                     schedule.cancel_job(self.scheduled_tasks[task_id])
@@ -432,14 +443,14 @@ class MinecraftServerManager:
                     print(f"Removed scheduled task: {task_id}")
                 else:
                     print(f"No such scheduled task: {task_id}")
-            elif command == 's' and len(parts) >= 2:
+            elif base_command == 's' and len(parts) >= 2:
                 message_body = " ".join(parts[1:])
                 self.send_server_message(message_body)
-            elif command == 'ss':
+            elif base_command == 'ss':
                 self.show_scheduled_tasks()
-            elif command == 'help':
+            elif base_command == 'help':
                 self.help()
-            elif command == 'exit':
+            elif base_command == 'exit':
                 self.stop_schedule_thread()
                 print("Exiting Minecraft Server Manager.")
                 sys.exit()
