@@ -576,6 +576,11 @@ def main():
         manager._start_autobackup()
         print("Autobackup enabled from config.")
 
+    # Check if autobackup is enabled in config and start it if necessary
+    if manager.config_manager.is_milestonebackup_enabled():
+        manager._start_milestonebackup()
+        print("MilestoneBackup enabled from config.")
+
     # Check if auto-shutdown is enabled in config and schedule it if necessary
     if manager.config_manager.is_auto_shutdown_enabled():
         manager._schedule_auto_shutdown()
