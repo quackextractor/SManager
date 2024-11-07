@@ -1,22 +1,27 @@
-# scripts/start_mc.py
 import os
 import subprocess
 import sys
 import time
 
 # Add parent directory to path to import utils
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(base_dir)
 from utils.logger import Logger
+from utils.config_manager import ConfigManager
 
 
 def start_minecraft_server():
-    # Get the server directory from environment or hardcode
-    server_dir = os.path.expanduser("~/Desktop/Fabric")
-    log_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'ManagerLog.txt')
+    # Get config and log paths
+    config_path = os.path.join(base_dir, 'config.ini')
+    log_path = os.path.join(base_dir, 'ManagerLog.txt')
 
+    # Initialize config manager and logger
+    config_manager = ConfigManager(config_path)
     logger = Logger(log_path)
 
     try:
+        # Get server root from config
+        server_root = config_manager.get_server_root()
 
         # Log active screen sessions
         try:
@@ -34,7 +39,7 @@ def start_minecraft_server():
             'minecraftScreen',
             'bash',
             '-c',
-            f'cd "{server_dir}" && java -Xmx16G -jar fabric-server.jar nogui; exec bash'
+            f'cd "{server_root}" && java -Xmx16G -jar fabric-server.jar nogui; exec bash'
         ], check=True)
 
         # Delay to allow server to start
