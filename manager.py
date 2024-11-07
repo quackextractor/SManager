@@ -569,19 +569,17 @@ Add -s <minutes> to any command to schedule it
         self.logger.log("Displayed help information")
 
 def main():
-    # Check if the script is being run with sudo permissions
-    if os.geteuid() != 0:
-        # If not, re-execute the script with sudo
-        print("Restarting the program with sudo permissions...")
-        args = ["sudo", sys.executable] + sys.argv
-        os.execvp(sys.executable, args)
-
     manager = MinecraftServerManager()
 
     # Check if autobackup is enabled in config and start it if necessary
     if manager.config_manager.is_autobackup_enabled():
         manager._start_autobackup()
         print("Autobackup enabled from config.")
+
+    # Check if auto-shutdown is enabled in config and schedule it if necessary
+    if manager.config_manager.is_auto_shutdown_enabled():
+        manager._schedule_auto_shutdown()
+        print(f"Auto-shutdown enabled at {manager.config_manager.get_auto_shutdown_time()}")
 
     print("Minecraft Server Manager")
     manager.help()
