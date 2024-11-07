@@ -99,7 +99,9 @@ class MinecraftServerManager:
             'load -m': self.load_milestone_backup,
             'log': self.show_log,
             'auto': self.toggle_autobackup,
-            'auto -m': self.toggle_milestonebackup
+            'auto -m': self.toggle_milestonebackup,
+            'setautoshutdown': self.set_shutdown_time,
+            'toggleautoshutdown': self.toggle_auto_shutdown,
         }
 
     def _run_script(self, script_name: str, log_message: Optional[str] = None) -> bool:
@@ -491,6 +493,10 @@ class MinecraftServerManager:
                 self.command_map[command]()  # Fixed: Use full command string for lookup
             elif base_command in self.command_map:
                 self.command_map[base_command](*parts[1:])
+            elif base_command == 'setautoshutdown' and len(parts) == 2:
+                self.set_shutdown_time(parts[1])
+            elif base_command == 'toggleautoshutdown':
+                self.toggle_auto_shutdown()
             elif base_command == 'sqa' and len(parts) == 2 and parts[1].isdigit():
                 self.schedule_stop_all(int(parts[1]))
             elif base_command == 'wsqa' and len(parts) == 2 and parts[1].isdigit():
@@ -545,16 +551,16 @@ Minecraft Server Manager Commands:
 - log          : Show latest server log
 - auto         : Toggle autobackup
 - auto -m      : Toggle milestone backup
+- setautoshutdown <time>: Set the auto-shutdown time (HH:MM)
+- toggleautoshutdown: Toggle the auto-shutdown setting
 - sqa <minutes>: Schedule server stop after a delay
 - wsqa <minutes>: Warn players and schedule stop after a delay
 - rs <task_id> : Remove a scheduled task by ID
 - ss           : Show scheduled tasks
 - s <txt>      : Send a message to console (/say is added) 
                  or a command (if it's already starting with /)
-
 Scheduling Syntax:
 Add -s <minutes> to any command to schedule it
- 
 - help         : Show this help message
 - exit         : Exit the program
 """
