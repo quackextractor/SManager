@@ -129,12 +129,12 @@ class MinecraftServerManager:
 
         def shutdown_task():
             # Send warning message 5 minutes before shutdown
-            self.send_server_message("Server will automatically shut down in 5 minutes!")
-            time.sleep(300)  # Wait 5 minutes
+            self.send_server_message("Server will automatically shut down in 3 minutes!")
+            time.sleep(180)  # Wait 3 minutes
 
             # Stop Minecraft server
             self.stop_mc()
-            time.sleep(30)  # Wait for server to fully stop
+            time.sleep(20)  # Wait for server to fully stop
 
             # Shutdown Linux system
             self.logger.log("Initiating system shutdown")
