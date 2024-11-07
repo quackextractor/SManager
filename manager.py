@@ -367,6 +367,7 @@ class MinecraftServerManager:
         else:
             self._stop_milestonebackup()
             print("Milestone backup disabled.")
+            print("Milestone backup disabled.")
 
         self.logger.log(f"Milestone backup {'enabled' if new_setting else 'disabled'}")
 
@@ -568,6 +569,13 @@ Add -s <minutes> to any command to schedule it
         self.logger.log("Displayed help information")
 
 def main():
+    # Check if the script is being run with sudo permissions
+    if os.geteuid() != 0:
+        # If not, re-execute the script with sudo
+        print("Restarting the program with sudo permissions...")
+        args = ["sudo", sys.executable] + sys.argv
+        os.execvp(sys.executable, args)
+
     manager = MinecraftServerManager()
 
     # Check if autobackup is enabled in config and start it if necessary
