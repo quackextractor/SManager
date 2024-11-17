@@ -100,8 +100,6 @@ class MinecraftServerManager:
             'log': self.show_log,
             'auto': self.toggle_autobackup,
             'auto -m': self.toggle_milestonebackup,
-            'sas': self.set_shutdown_time,
-            'tas': self.toggle_auto_shutdown,
         }
 
     def _run_script(self, script_name: str, log_message: Optional[str] = None) -> bool:
@@ -115,66 +113,6 @@ class MinecraftServerManager:
         Send a message/command to all active screen sessions.
         """
         return send_server_message(self.config_manager, message, self.logger)
-
-    def _schedule_auto_shutdown(self):
-        """Schedule the auto-shutdown task based on configured time"""
-        if "auto_shutdown" in self.scheduled_tasks:
-            schedule.cancel_job(self.scheduled_tasks["auto_shutdown"])
-            del self.scheduled_tasks["auto_shutdown"]
-
-        if not self.config_manager.is_auto_shutdown_enabled():
-            return
-
-        shutdown_time = self.config_manager.get_auto_shutdown_time()
-
-        def shutdown_task():
-            # Send warning message 5 minutes before shutdown
-            self.send_server_message("Server will automatically shut down in 3 minutes!")
-            time.sleep(180)  # Wait 3 minutes
-
-            # Stop Minecraft server
-            self.stop_mc()
-            time.sleep(20)  # Wait for server to fully stop
-
-            # Shutdown Linux system
-            self.logger.log("Initiating system shutdown")
-            os.system('sudo shutdown now')
-
-        # Schedule the job to run daily at the specified time
-        job = schedule.every().day.at(shutdown_time).do(shutdown_task).tag("auto_shutdown")
-        self.scheduled_tasks["auto_shutdown"] = job
-        self._start_schedule_thread()
-
-        self.logger.log(f"Auto-shutdown scheduled for {shutdown_time}")
-
-    def toggle_auto_shutdown(self):
-        """Toggle the auto-shutdown setting"""
-        current_setting = self.config_manager.is_auto_shutdown_enabled()
-        new_setting = not current_setting
-        self.config_manager.set_auto_shutdown(new_setting)
-
-        if new_setting:
-            self._schedule_auto_shutdown()
-            print(f"Auto-shutdown enabled at {self.config_manager.get_auto_shutdown_time()}")
-        else:
-            if "auto_shutdown" in self.scheduled_tasks:
-                schedule.cancel_job(self.scheduled_tasks["auto_shutdown"])
-                del self.scheduled_tasks["auto_shutdown"]
-            print("Auto-shutdown disabled")
-
-        self.logger.log(f"Auto-shutdown {'enabled' if new_setting else 'disabled'}")
-
-    def set_shutdown_time(self, time_str: str):
-        """Set the auto-shutdown time"""
-        if self.config_manager.set_auto_shutdown_time(time_str):
-            if self.config_manager.is_auto_shutdown_enabled():
-                self._schedule_auto_shutdown()
-            print(f"Auto-shutdown time set to {time_str}")
-            self.logger.log(f"Auto-shutdown time set to {time_str}")
-            return True
-        else:
-            print("Invalid time format. Use HH:MM in 24-hour format (e.g., 23:30)")
-            return False
 
     def schedule_command(self, command: str, delay_minutes: int, *args) -> bool:
         """
@@ -494,10 +432,6 @@ class MinecraftServerManager:
                 self.command_map[command]()  # Fixed: Use full command string for lookup
             elif base_command in self.command_map:
                 self.command_map[base_command](*parts[1:])
-            elif base_command == 'sas' and len(parts) == 2:
-                self.set_shutdown_time(parts[1])
-            elif base_command == 'tas':
-                self.toggle_auto_shutdown()
             elif base_command == 'sqa' and len(parts) == 2 and parts[1].isdigit():
                 self.schedule_stop_all(int(parts[1]))
             elif base_command == 'wsqa' and len(parts) == 2 and parts[1].isdigit():
@@ -552,8 +486,6 @@ Minecraft Server Manager Commands:
 - log          : Show latest server log
 - auto         : Toggle autobackup
 - auto -m      : Toggle milestone backup
-- sas <time>   : Set the auto-shutdown time (HH:MM)
-- tas          : Toggle the auto-shutdown setting
 - sqa <minutes>: Schedule server stop after a delay
 - wsqa <minutes>: Warn players and schedule stop after a delay
 - rs <task_id> : Remove a scheduled task by ID
@@ -580,11 +512,6 @@ def main():
     if manager.config_manager.is_milestonebackup_enabled():
         manager._start_milestonebackup()
         print("MilestoneBackup enabled from config.")
-
-    # Check if auto-shutdown is enabled in config and schedule it if necessary
-    if manager.config_manager.is_auto_shutdown_enabled():
-        manager._schedule_auto_shutdown()
-        print(f"Auto-shutdown enabled at {manager.config_manager.get_auto_shutdown_time()}")
 
     print("Minecraft Server Manager")
     manager.help()
