@@ -100,6 +100,8 @@ class MinecraftServerManager:
             'log': self.show_log,
             'auto': self.toggle_autobackup,
             'auto -m': self.toggle_milestonebackup,
+            'amc': lambda: self.attach_to_server('mc'),
+            'at': lambda: self.attach_to_server('tunnel'),
         }
 
     def _run_script(self, script_name: str, log_message: Optional[str] = None) -> bool:
@@ -409,6 +411,45 @@ class MinecraftServerManager:
             self.schedule_thread = None
             print("Scheduling thread stopped.")
 
+    def attach_to_server(self, target: str = "mc"):
+        """
+        Attach to a screen session for either Minecraft server or tunnel.
+
+        Args:
+            target (str): Either 'mc' for Minecraft server or 'tunnel' for Playit tunnel
+                         Default is 'mc'
+        """
+        try:
+            screen_name = "minecraftScreen" if target == "mc" else "playitScreen"
+
+            # First check if the screen session exists
+            try:
+                screen_sessions = subprocess.check_output(['screen', '-ls'], stderr=subprocess.STDOUT, text=True)
+                if screen_name not in screen_sessions:
+                    print(f"No active {screen_name} session found.")
+                    self.logger.log(f"Attempted to attach to non-existent screen session: {screen_name}")
+                    return False
+            except subprocess.CalledProcessError as e:
+                if "No Sockets found" in str(e.output):
+                    print(f"No active screen sessions found.")
+                else:
+                    print(f"Error checking screen sessions: {e}")
+                self.logger.log(f"Failed to check screen sessions: {e}")
+                return False
+
+            # Attempt to attach to the screen session
+            subprocess.run(['screen', '-r', screen_name], check=True)
+            return True
+
+        except subprocess.CalledProcessError as e:
+            print(f"Failed to attach to screen session: {e}")
+            self.logger.log(f"Failed to attach to screen session {screen_name}: {e}")
+            return False
+        except Exception as e:
+            print(f"An error occurred while attaching to screen session: {e}")
+            self.logger.log(f"Error in attach_to_server: {e}")
+            return False
+
     def handle_command(self, command_input: str) -> bool:
         """
         Handle command input including scheduling syntax.
@@ -469,34 +510,36 @@ class MinecraftServerManager:
     def help(self):
         """Display help information about commands."""
         help_text = """
-Minecraft Server Manager Commands:
-- sa           : Start server and Playit
-- qa           : Stop server and Playit
-- ra           : Restart server and Playit
-- smc          : Start server
-- qmc          : Stop server
-- rmc          : Restart server
-- st           : Start Playit
-- qt           : Stop Playit
-- rt           : Restart Playit
-- backup       : Create world backup
-- backup -m    : Create world milestone backup
-- load         : Load latest backup
-- load -m      : Load latest milestone backup
-- log          : Show latest server log
-- auto         : Toggle autobackup
-- auto -m      : Toggle milestone backup
-- sqa <minutes>: Schedule server stop after a delay
-- wsqa <minutes>: Warn players and schedule stop after a delay
-- rs <task_id> : Remove a scheduled task by ID
-- ss           : Show scheduled tasks
-- s <txt>      : Send a message to console (/say is added) 
-                 or a command (if it's already starting with /)
-                 
-Add -s <minutes> to any command to schedule it
-- help         : Show this help message
-- exit         : Exit the program
-"""
+        Minecraft Server Manager Commands:
+        - sa           : Start server and Playit
+        - qa           : Stop server and Playit
+        - ra           : Restart server and Playit
+        - smc          : Start server
+        - qmc          : Stop server
+        - rmc          : Restart server
+        - st           : Start Playit
+        - qt           : Stop Playit
+        - rt           : Restart Playit
+        - backup       : Create world backup
+        - backup -m    : Create world milestone backup
+        - load         : Load latest backup
+        - load -m      : Load latest milestone backup
+        - log          : Show latest server log
+        - auto         : Toggle autobackup
+        - auto -m      : Toggle milestone backup
+        - amc          : Attach to Minecraft server console
+        - at           : Attach to Playit tunnel console
+        - sqa <minutes>: Schedule server stop after a delay
+        - wsqa <minutes>: Warn players and schedule stop after a delay
+        - rs <task_id> : Remove a scheduled task by ID
+        - ss           : Show scheduled tasks
+        - s <txt>      : Send a message to console (/say is added) 
+                         or a command (if it's already starting with /)
+
+        Add -s <minutes> to any command to schedule it
+        - help         : Show this help message
+        - exit         : Exit the program
+        """
         print(help_text)
         self.logger.log("Displayed help information")
 
